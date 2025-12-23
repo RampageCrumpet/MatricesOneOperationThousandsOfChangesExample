@@ -1,14 +1,14 @@
 ﻿using MathNet.Numerics;
+using MathNet.Numerics.Providers.LinearAlgebra;
 using MatricesOneOperationThousandsOfChangesExample;
 using MatricesOneOperationThousandsOfChangesExample.Data;
 using MatricesOneOperationThousandsOfChangesExample.TaxCalculators;
-using MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTaxCalculatorHelpers;
 
 // The total sample size to print at the end.
 const int sampleSize = 20;
 
 // The number of employees we want to generate to calculate taxes for.
-const int employeeCount = 1_000_000;
+const int employeeCount = 10_000_000;
 EmployeeGenerator employeeGenerator = new EmployeeGenerator(1234);
 List<Employee> employees = employeeGenerator.GetEmployees(employeeCount);
 
@@ -23,12 +23,13 @@ catch (Exception ex)
     // This is okay, we just wont be using any optomizations for our linnear algebra. Expect to see the iterative style outperform the matrix math.
     Console.WriteLine($"Failed to load OpenBLAS provider: {ex.Message}");
 }
+Console.WriteLine($"Linear Algebra Provider: {LinearAlgebraControl.Provider} \n");
 
 var iterativeCalculator = new EmployeeTaxCalculation_Iterative();
 var matrixCalculator = new EmployeeTaxCalculation_MatrixBased();
 
-var raceResult = CodeRacer.Race(employees, iterativeCalculator, matrixCalculator);
-CodeRacer.PrintResults(raceResult, 1000);
+var raceResult = CodeRacer.Race(employees);
+CodeRacer.PrintResults(raceResult);
 
 Console.WriteLine('\n');
 
