@@ -3,15 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static MatricesOneOperationThousandsOfChangesExample.Data.TaxData;
 
-namespace MatricesOneOperationThousandsOfChangesExample
+namespace MatricesOneOperationThousandsOfChangesExample.Data
 {
     /// <summary>
     /// An employee data class.
     /// </summary>
     public class Employee
     {
-        public Employee(int id, string name, string state, int income)
+        public Employee(int id, string name, State state, int income)
         {
             Id = id;
             Name = name;
@@ -30,9 +31,9 @@ namespace MatricesOneOperationThousandsOfChangesExample
         public string Name { get; set; }
 
         /// <summary>
-        /// The employee's state of residence.
+        /// The employee's state/jurisdiction of residence (used for state tax selection).
         /// </summary>
-        public string State { get; set; }
+        public State State { get; set; }
 
         /// <summary>
         /// The employees pretax income.

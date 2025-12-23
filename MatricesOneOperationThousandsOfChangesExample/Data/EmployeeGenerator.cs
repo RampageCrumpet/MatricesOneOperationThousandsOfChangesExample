@@ -3,20 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static MatricesOneOperationThousandsOfChangesExample.Data.TaxData;
 
-namespace MatricesOneOperationThousandsOfChangesExample
+namespace MatricesOneOperationThousandsOfChangesExample.Data
 {
     /// <summary>
     /// This class generates a collection of employees with randomized data.
     /// </summary>
     public class EmployeeGenerator
     {
-        Random random;
-
-        /// <summary>
-        /// Collection of US states for random assignment.
-        /// </summary>
-        static readonly string[] States = { "CA", "NY", "TX" };
+        readonly Random random;
 
         /// <summary>
         /// A collection of first names for random name generation.
@@ -27,6 +23,9 @@ namespace MatricesOneOperationThousandsOfChangesExample
         /// A collection of last names for random name generation.
         /// </summary>
         static readonly string[] LastNames = { "Smith", "Johnson", "Brown", "Taylor", "Anderson", "Thomas", "Jackson", "White" };
+
+
+        private static readonly State[] AllStates = (State[])Enum.GetValues(typeof(State));
 
         public EmployeeGenerator(int seed)
         {
@@ -46,7 +45,7 @@ namespace MatricesOneOperationThousandsOfChangesExample
             for (int x = 0; x < count; x++)
             {
                 int income = random.Next(4, 50) * 10_000;
-                string state = States[random.Next() % States.Length];
+                State state = AllStates[random.Next() % AllStates.Length];
                 string name = GetRandomName();
                 employees.Add(new Employee(x, name, state, income));
             }

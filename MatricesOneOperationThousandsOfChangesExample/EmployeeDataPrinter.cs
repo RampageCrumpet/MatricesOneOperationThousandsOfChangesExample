@@ -1,4 +1,5 @@
-﻿using System;
+﻿using MatricesOneOperationThousandsOfChangesExample.Data;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -11,9 +12,9 @@ namespace MatricesOneOperationThousandsOfChangesExample
         /// <summary>
         /// Print out a sample of employee tax data.
         /// </summary>
-        /// <param name="employees"> Our collection of employees to print.</param>
+        /// <param name="taxResults"> Our taxdata collection that containing information about the employee and the tax they've paid.</param>
         /// <param name="sampleSize"> The number of employees to print.</param>
-        public static void PrintEmployeeData(IEnumerable<Employee> employees, IEnumerable<double> federalWithholding, IEnumerable<double> stateWithholding, int sampleSize)
+        public static void PrintEmployeeData(IEnumerable<TaxResult> taxResults, int sampleSize)
         {
             Console.WriteLine();
             Console.WriteLine("Sample Tax Results");
@@ -21,21 +22,17 @@ namespace MatricesOneOperationThousandsOfChangesExample
             Console.WriteLine($"{"ID",6} {"State",6} {"Income",12} {"Federal",12} {"State",12} {"Total",12}");
             Console.WriteLine("--------------------------------------------------------------------------");
 
-            foreach (var (employee, federal, state) in
-             employees
-                 .Zip(federalWithholding, (e, f) => (e, f))
-                 .Zip(stateWithholding, (ef, s) => (ef.e, ef.f, s))
-                 .Take(sampleSize))
+            foreach (var result in taxResults.Take(sampleSize))
             {
-                double total = federal + state;
+                var employee = result.Employee;
 
                 Console.WriteLine(
                     $"{employee.Id,6} " +
                     $"{employee.State,6} " +
                     $"{employee.Income,12:C0} " +
-                    $"{federal,12:C0} " +
-                    $"{state,12:C0} " +
-                    $"{total,12:C0}"
+                    $"{result.FederalTax,12:C0} " +
+                    $"{result.StateTax,12:C0} " +
+                    $"{result.TotalIncomeTax,12:C0}"
                 );
             }
         }
