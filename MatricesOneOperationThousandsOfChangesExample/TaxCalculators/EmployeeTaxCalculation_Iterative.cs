@@ -12,7 +12,7 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators
     /// Computes taxes using straightforward per-employee loops and direct policy evaluation.
     /// This class is used as a baseline to compare the matrix based solution to, you wont find anything interesting in here.
     /// </summary>
-    public sealed class EmployeeTaxCalculation_Iterative
+    public class EmployeeTaxCalculation_Iterative
     {
         /// <summary>
         /// Calculates federal, state, and payroll taxes for each employee using direct iterative evaluation.
@@ -261,8 +261,8 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators
             {
                 case TaxData.PayrollTax.SocialSecurity: socialSecurityEmployer = amount; return;
                 case TaxData.PayrollTax.Medicare: medicareEmployer = amount; return;
-                case TaxData.PayrollTax.FUTA: federalUnemploymentTaxes = amount; return;
-                case TaxData.PayrollTax.SUTA: stateUnemploymentTaxes = amount; return;
+                case TaxData.PayrollTax.FederalUnemploymentTax: federalUnemploymentTaxes = amount; return;
+                case TaxData.PayrollTax.StateUnemploymentTax: stateUnemploymentTaxes = amount; return;
                 default: throw new InvalidOperationException($"Unexpected employer payroll tax: {policy.Tax}");
             }
         }

@@ -1,5 +1,4 @@
 ﻿using MatricesOneOperationThousandsOfChangesExample.Data;
-using MatricesOneOperationThousandsOfChangesExample.Data.TaxData;
 using MatricesOneOperationThousandsOfChangesExample.TaxCalculators;
 using System;
 using System.Collections.Generic;

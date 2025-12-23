@@ -189,8 +189,8 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
                     FindPayrollPolicyIndex(TaxData.PayrollTax.AdditionalMedicare, TaxData.PayrollSide.Employee),
                     FindPayrollPolicyIndex(TaxData.PayrollTax.SocialSecurity, TaxData.PayrollSide.Employer),
                     FindPayrollPolicyIndex(TaxData.PayrollTax.Medicare, TaxData.PayrollSide.Employer),
-                    FindPayrollPolicyIndex(TaxData.PayrollTax.FUTA, TaxData.PayrollSide.Employer),
-                    FindPayrollPolicyIndex(TaxData.PayrollTax.SUTA, TaxData.PayrollSide.Employer));
+                    FindPayrollPolicyIndex(TaxData.PayrollTax.FederalUnemploymentTax, TaxData.PayrollSide.Employer),
+                    FindPayrollPolicyIndex(TaxData.PayrollTax.StateUnemploymentTax, TaxData.PayrollSide.Employer));
             }
 
             /// <summary>
