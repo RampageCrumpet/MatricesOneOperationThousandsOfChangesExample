@@ -12,29 +12,82 @@ namespace MatricesOneOperationThousandsOfChangesExample.Data
     /// </summary>
     public class TaxDataGenerator
     {
+        /// <summary>
+        /// Used to simulate additional scalable employer burden / costing lines we could add. 
+        /// This is used to simulate general ledger type expansions.
+        /// </summary>
+        public const int AdditionalEmployerBurdenPolicyCount = 0;
+
+        /// <summary>
+        /// The fraction of employer burden that is expanded into general ledger posting policies.
+        /// </summary>
+        private const float TotalGeneralLedgerBurdenRate = 0.12f;
+
         public static PayrollYearInputs BuildPayrollInputs()
         {
             return new PayrollYearInputs(
                 SocialSecurityWageBaseCap: 170_000,
                 AdditionalMedicareThreshold: 200_000,
-                FutaWageBaseCap: 7_000,
-                SutaWageBaseCap: 9_000
+                FederalUnemploymentWageBaseCap: 7_000,
+                StateUnemploymentWageBaseCap: 9_000
             );
         }
 
         public static IReadOnlyList<PayrollPolicy> BuildPayrollPolicies(PayrollYearInputs inputs)
         {
-            return new PayrollPolicy[]
-            {
+            return new List<PayrollPolicy>
+                        {
                     new(PayrollTax.SocialSecurity, PayrollSide.Employee, PayrollRule.Capped, Rate: 0.062, Parameter: inputs.SocialSecurityWageBaseCap),
                     new(PayrollTax.Medicare, PayrollSide.Employee, PayrollRule.Flat, Rate: 0.0145),
                     new(PayrollTax.AdditionalMedicare, PayrollSide.Employee, PayrollRule.AboveThreshold, Rate: 0.009, Parameter: inputs.AdditionalMedicareThreshold),
 
                     new(PayrollTax.SocialSecurity, PayrollSide.Employer, PayrollRule.Capped, Rate: 0.062, Parameter: inputs.SocialSecurityWageBaseCap),
                     new(PayrollTax.Medicare, PayrollSide.Employer, PayrollRule.Flat, Rate: 0.0145),
-                    new(PayrollTax.FederalUnemploymentTax, PayrollSide.Employer, PayrollRule.Capped, Rate: 0.006, Parameter: inputs.FutaWageBaseCap),
-                    new(PayrollTax.StateUnemploymentTax, PayrollSide.Employer, PayrollRule.Capped, Rate: 0.027, Parameter: inputs.SutaWageBaseCap),
-            };
+                    new(PayrollTax.FederalUnemploymentTax, PayrollSide.Employer, PayrollRule.Capped, Rate: 0.006, Parameter: inputs.FederalUnemploymentWageBaseCap),
+                    new(PayrollTax.StateUnemploymentTax, PayrollSide.Employer, PayrollRule.Capped, Rate: 0.027, Parameter: inputs.StateUnemploymentWageBaseCap),
+                        };
+        }
+
+        /// <summary>
+        /// Builds general ledger posting policies (allocation buckets) used to expand employer burden into many posting lines.
+        /// Each bucket has a deterministic rate, and all rates sum to <see cref="TotalGeneralLedgerBurdenRate"/>.
+        /// </summary>
+        public static IReadOnlyList<GeneralLedgerPostingPolicy> BuildGeneralLedgerPostingPolicies(PayrollYearInputs inputs)
+        {
+            int bucketCount = AdditionalEmployerBurdenPolicyCount;
+            if (bucketCount <= 0)
+                return Array.Empty<GeneralLedgerPostingPolicy>();
+
+            // Deterministic so benchmark runs are stable.
+            var random = new Random(12345);
+
+            // Generate positive weights then normalize so sum(weights) == 1.
+            double[] weights = new double[bucketCount];
+            double weightSum = 0.0;
+
+            for (int i = 0; i < bucketCount; i++)
+            {
+                // Keep strictly > 0 so no bucket ends up dead.
+                double w = 0.1 + random.NextDouble(); // [0.1, 1.1)
+                weights[i] = w;
+                weightSum += w;
+            }
+
+            var policies = new List<GeneralLedgerPostingPolicy>(bucketCount);
+
+            // Normalize to a believable total burden rate.
+            for (int bucketId = 0; bucketId < bucketCount; bucketId++)
+            {
+                double normalized = weights[bucketId] / weightSum;
+                double rate = TotalGeneralLedgerBurdenRate * normalized;
+
+                policies.Add(new GeneralLedgerPostingPolicy(
+                    BucketId: bucketId,
+                    Rate: rate
+                ));
+            }
+
+            return policies;
         }
 
         public static ProgressiveTaxTable BuildFederalTable()

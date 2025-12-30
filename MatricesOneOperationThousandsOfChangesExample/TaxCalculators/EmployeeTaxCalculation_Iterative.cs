@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static MatricesOneOperationThousandsOfChangesExample.Data.TaxData;
 
 namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators
 {
@@ -15,56 +16,65 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators
     public class EmployeeTaxCalculation_Iterative
     {
         /// <summary>
-        /// Calculates federal, state, and payroll taxes for each employee using direct iterative evaluation.
+        /// Calculates federal, state, payroll, and general ledger values for each employee into a prewarmed result array.
         /// </summary>
         /// <param name="employees">The employees to compute taxes for.</param>
-        /// <returns>Tax results aligned to the input employee ordering.</returns>
-        public static IEnumerable<TaxResult> CalculateTaxes(IReadOnlyList<Employee> employees)
+        /// <param name="results">The prewarmed result array receiving computed values.</param>
+        public static void CalculateTaxesInto(IReadOnlyList<Employee> employees, TaxResult[] results)
         {
             if (employees == null) throw new ArgumentNullException(nameof(employees));
-            if (employees.Count == 0) return Array.Empty<TaxResult>();
+            if (results == null) throw new ArgumentNullException(nameof(results));
 
-            var results = new List<TaxResult>(employees.Count);
+            int employeeCount = employees.Count;
 
-            for (int employeeIndex = 0; employeeIndex < employees.Count; employeeIndex++)
+            if (results.Length != employeeCount)
+                throw new ArgumentException("results.Length must match employees.Count.", nameof(results));
+
+            IReadOnlyList<TaxData.GeneralLedgerPostingPolicy> generalLedgerPolicies = TaxData.GeneralLedgerPostingPolicies;
+            int generalLedgerBucketCount = generalLedgerPolicies.Count;
+
+            for (int employeeIndex = 0; employeeIndex < employeeCount; employeeIndex++)
             {
                 Employee employee = employees[employeeIndex];
-                TaxResult result = CalculateEmployeeTaxes(employee);
-                results.Add(result);
+                TaxResult taxResult = results[employeeIndex]
+                    ?? throw new InvalidOperationException("TaxResult array must be prewarmed.");
+
+                double income = employee.Income;
+
+                double federalTax = CalculateProgressiveTax(income, TaxData.FederalTable);
+                double stateTax = CalculateStateTax(income, employee.State);
+
+                PayrollBreakdown payroll = CalculatePayrollBreakdown(income);
+
+                taxResult.Employee = employee;
+                taxResult.FederalTax = federalTax;
+                taxResult.StateTax = stateTax;
+
+                taxResult.SocialSecurityEmployee = payroll.SocialSecurityEmployee;
+                taxResult.MedicareEmployee = payroll.MedicareEmployee;
+                taxResult.AdditionalMedicareEmployee = payroll.AdditionalMedicareEmployee;
+
+                taxResult.SocialSecurityEmployer = payroll.SocialSecurityEmployer;
+                taxResult.MedicareEmployer = payroll.MedicareEmployer;
+                taxResult.FederalUnemploymentTaxes = payroll.FederalUnemploymentTaxes;
+                taxResult.StateUnemploymentTaxes = payroll.StateUnemploymentTaxes;
+
+                if (generalLedgerBucketCount > 0)
+                {
+                    double[] generalLedgerPostings = taxResult.GeneralLedgerPostings
+                        ?? throw new InvalidOperationException("GeneralLedgerPostings must be prewarmed when GL buckets exist.");
+
+                    if (generalLedgerPostings.Length != generalLedgerBucketCount)
+                        throw new InvalidOperationException("GeneralLedgerPostings length does not match GL policy count.");
+
+                    for (int bucketIndex = 0; bucketIndex < generalLedgerBucketCount; bucketIndex++)
+                        generalLedgerPostings[bucketIndex] = income * generalLedgerPolicies[bucketIndex].Rate;
+                }
+                else
+                {
+                    taxResult.GeneralLedgerPostings = null;
+                }
             }
-
-            return results;
-        }
-
-        /// <summary>
-        /// Calculates the full tax result for one employee by evaluating federal, state, and payroll policies.
-        /// </summary>
-        /// <param name="employee">The employee to compute taxes for.</param>
-        /// <returns>A populated tax result for the given employee.</returns>
-        private static TaxResult CalculateEmployeeTaxes(Employee employee)
-        {
-            double income = employee.Income;
-
-            double federalTax = CalculateProgressiveTax(income, TaxData.FederalTable);
-            double stateTax = CalculateStateTax(income, employee.State);
-
-            PayrollBreakdown payroll = CalculatePayrollBreakdown(income);
-
-            return new TaxResult
-            {
-                Employee = employee,
-                FederalTax = federalTax,
-                StateTax = stateTax,
-
-                SocialSecurityEmployee = payroll.SocialSecurityEmployee,
-                MedicareEmployee = payroll.MedicareEmployee,
-                AdditionalMedicareEmployee = payroll.AdditionalMedicareEmployee,
-
-                SocialSecurityEmployer = payroll.SocialSecurityEmployer,
-                MedicareEmployer = payroll.MedicareEmployer,
-                FederalUnemploymentTaxes = payroll.FederalUnemploymentTaxes,
-                StateUnemploymentTaxes = payroll.StateUnemploymentTaxes
-            };
         }
 
         /// <summary>
@@ -117,14 +127,7 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators
             /// <summary>
             /// Initializes a payroll breakdown with all expected employee-side and employer-side payroll amounts.
             /// </summary>
-            public PayrollBreakdown(
-                double socialSecurityEmployee,
-                double medicareEmployee,
-                double additionalMedicareEmployee,
-                double socialSecurityEmployer,
-                double medicareEmployer,
-                double federalUnemploymentTaxes,
-                double stateUnemploymentTaxes)
+            public PayrollBreakdown(double socialSecurityEmployee,  double medicareEmployee, double additionalMedicareEmployee, double socialSecurityEmployer, double medicareEmployer, double federalUnemploymentTaxes, double stateUnemploymentTaxes)
             {
                 SocialSecurityEmployee = socialSecurityEmployee;
                 MedicareEmployee = medicareEmployee;
@@ -233,18 +236,37 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators
         }
 
         /// <summary>
-        /// Routes a computed payroll amount into the correct typed output field based on payroll side and tax kind.
+        /// Assigns a computed payroll amount to the appropriate output variable based on
+        /// the payroll policy’s side and tax type.
         /// </summary>
-        private static void AssignPayrollAmount(
-            TaxData.PayrollPolicy policy,
-            double amount,
-            ref double socialSecurityEmployee,
-            ref double medicareEmployee,
-            ref double additionalMedicareEmployee,
-            ref double socialSecurityEmployer,
-            ref double medicareEmployer,
-            ref double federalUnemploymentTaxes,
-            ref double stateUnemploymentTaxes)
+        /// <param name="policy">
+        /// The payroll policy describing the tax type and whether it applies to the employee or employer.
+        /// </param>
+        /// <param name="amount">
+        /// The computed payroll amount to assign.
+        /// </param>
+        /// <param name="socialSecurityEmployee">
+        /// The output location for the employee portion of Social Security tax.
+        /// </param>
+        /// <param name="medicareEmployee">
+        /// The output location for the employee portion of Medicare tax.
+        /// </param>
+        /// <param name="additionalMedicareEmployee">
+        /// The output location for the employee portion of Additional Medicare tax.
+        /// </param>
+        /// <param name="socialSecurityEmployer">
+        /// The output location for the employer portion of Social Security tax.
+        /// </param>
+        /// <param name="medicareEmployer">
+        /// The output location for the employer portion of Medicare tax.
+        /// </param>
+        /// <param name="federalUnemploymentTaxes">
+        /// The output location for the employer portion of Federal Unemployment Tax.
+        /// </param>
+        /// <param name="stateUnemploymentTaxes">
+        /// The output location for the employer portion of State Unemployment Tax.
+        /// </param>
+        private static void AssignPayrollAmount(TaxData.PayrollPolicy policy, double amount, ref double socialSecurityEmployee, ref double medicareEmployee, ref double additionalMedicareEmployee, ref double socialSecurityEmployer, ref double medicareEmployer, ref double federalUnemploymentTaxes, ref double stateUnemploymentTaxes)
         {
             if (policy.Side == TaxData.PayrollSide.Employee)
             {
@@ -264,6 +286,51 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators
                 case TaxData.PayrollTax.FederalUnemploymentTax: federalUnemploymentTaxes = amount; return;
                 case TaxData.PayrollTax.StateUnemploymentTax: stateUnemploymentTaxes = amount; return;
                 default: throw new InvalidOperationException($"Unexpected employer payroll tax: {policy.Tax}");
+            }
+        }
+
+        /// <summary>
+        /// Computes general ledger postings by iterating employees and applying each posting policy.
+        /// </summary>
+        /// <param name="income">
+        /// Per-employee income values.
+        /// </param>
+        /// <param name="policies">
+        /// General ledger posting policies defining allocation rates.
+        /// </param>
+        /// <param name="destinationColumnMajor">
+        /// Preallocated buffer receiving postings in column-major order.
+        /// </param>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown if any argument is null.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// Thrown if the destination buffer length does not match the expected output size.
+        /// </exception>
+        public static void ComputeGeneralLedgerPostingsIterative(
+            double[] income,
+            IReadOnlyList<GeneralLedgerPostingPolicy> policies,
+            double[] destinationColumnMajor)
+        {
+            if (income == null) throw new ArgumentNullException(nameof(income));
+            if (policies == null) throw new ArgumentNullException(nameof(policies));
+            if (destinationColumnMajor == null) throw new ArgumentNullException(nameof(destinationColumnMajor));
+
+            int employeeCount = income.Length;
+            int bucketCount = policies.Count;
+
+            if (destinationColumnMajor.Length != employeeCount * bucketCount)
+                throw new ArgumentException(
+                    "Destination buffer length must equal employeeCount * policyCount.",
+                    nameof(destinationColumnMajor));
+
+            for (int b = 0; b < bucketCount; b++)
+            {
+                double rate = policies[b].Rate;
+                int columnOffset = b * employeeCount;
+
+                for (int i = 0; i < employeeCount; i++)
+                    destinationColumnMajor[columnOffset + i] = income[i] * rate;
             }
         }
     }

@@ -31,7 +31,8 @@ namespace MatricesOneOperationThousandsOfChangesExample.Data
             Medicare,
             AdditionalMedicare,
             FederalUnemploymentTax,
-            StateUnemploymentTax
+            StateUnemploymentTax,
+            EmployerBurden
         }
 
         public enum PayrollSide
@@ -70,8 +71,13 @@ namespace MatricesOneOperationThousandsOfChangesExample.Data
         public readonly record struct PayrollYearInputs(
             double SocialSecurityWageBaseCap,
             double AdditionalMedicareThreshold,
-            double FutaWageBaseCap,
-            double SutaWageBaseCap
+            double FederalUnemploymentWageBaseCap,
+            double StateUnemploymentWageBaseCap
+        );
+
+        public readonly record struct GeneralLedgerPostingPolicy(
+            int BucketId,
+            double Rate
         );
 
         /// <summary>
@@ -94,12 +100,18 @@ namespace MatricesOneOperationThousandsOfChangesExample.Data
         /// </summary>
         public static readonly IReadOnlyDictionary<State, ProgressiveTaxTable> StateTables;
 
+        /// <summary>
+        /// Various general ledger posting policies used for accounting entries.
+        /// </summary>
+        public static readonly IReadOnlyList<GeneralLedgerPostingPolicy> GeneralLedgerPostingPolicies;
+
         static TaxData()
         {
             PayrollInputs = TaxDataGenerator.BuildPayrollInputs();
             PayrollPolicies = TaxDataGenerator.BuildPayrollPolicies(PayrollInputs);
             FederalTable = TaxDataGenerator.BuildFederalTable();
             StateTables = TaxDataGenerator.BuildStateTables();
+            GeneralLedgerPostingPolicies = TaxDataGenerator.BuildGeneralLedgerPostingPolicies(PayrollInputs);
         }
     }
 }

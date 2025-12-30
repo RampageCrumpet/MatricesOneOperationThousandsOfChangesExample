@@ -13,7 +13,7 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
         /// Limits the number of policy columns multiplied per block to cap working-set size.\
         /// If you choose to play with this value it should be set to some power of two for best performance.
         /// </summary>
-        private const int MaxPolicyBlockWidth = 128;
+        private const int MaxPolicyBlockWidth = 64;
 
         /// <summary>
         /// Applies all policies by multiplying the employee feature matrix by the plan’s transform matrix in blocks and extracting outputs.
@@ -27,7 +27,7 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
         public static void Execute(
             DenseMatrix employeeFeatureMatrix,
             MatrixPolicyPlan plan,
-            EmployeeInputs inputs,
+            Dictionary<TaxData.State, int[]> indicesByState,
             double[] federalTaxes,
             double[] stateTaxes,
             double[][] payrollTaxesByPolicy)
@@ -59,7 +59,7 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
                     employeeCount,
                     taxesBlockValues,
                     plan.Layout,
-                    inputs.IndicesByState,
+                    indicesByState,
                     stateTaxes);
 
                 ExtractPayrollIfPresent(

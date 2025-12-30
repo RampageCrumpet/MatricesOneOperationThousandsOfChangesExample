@@ -2,13 +2,12 @@
 using MathNet.Numerics.Providers.LinearAlgebra;
 using MatricesOneOperationThousandsOfChangesExample;
 using MatricesOneOperationThousandsOfChangesExample.Data;
-using MatricesOneOperationThousandsOfChangesExample.TaxCalculators;
 
 // The total sample size to print at the end.
 const int sampleSize = 20;
 
 // The number of employees we want to generate to calculate taxes for.
-const int employeeCount = 10_000_000;
+const int employeeCount = 1_000_000;
 EmployeeGenerator employeeGenerator = new EmployeeGenerator(1234);
 List<Employee> employees = employeeGenerator.GetEmployees(employeeCount);
 
@@ -25,12 +24,7 @@ catch (Exception ex)
 }
 Console.WriteLine($"Linear Algebra Provider: {LinearAlgebraControl.Provider} \n");
 
-var iterativeCalculator = new EmployeeTaxCalculation_Iterative();
-var matrixCalculator = new EmployeeTaxCalculation_MatrixBased();
-
 var raceResult = CodeRacer.Race(employees);
 CodeRacer.PrintResults(raceResult);
 
 Console.WriteLine('\n');
-
-EmployeeDataPrinter.PrintEmployeeData(raceResult.MatrixResults, sampleSize);

@@ -14,20 +14,23 @@ namespace MatricesOneOperationThousandsOfChangesExample.Data
         /// <summary>
         /// The employee associated with this tax result.
         /// </summary>
-        required public Employee Employee { get; init; }
+        required public Employee Employee { get; set; }
 
-
+        /// <summary>
+        /// Gets or sets the per-employee general ledger postings aligned to TaxData.GeneralLedgerPostingPolicies order.
+        /// </summary>
+        public double[]? GeneralLedgerPostings { get; set; }
 
         // Employee-side payroll
-        public double SocialSecurityEmployee { get; init; }
-        public double MedicareEmployee { get; init; }
-        public double AdditionalMedicareEmployee { get; init; }
+        public double SocialSecurityEmployee { get; set; }
+        public double MedicareEmployee { get; set; }
+        public double AdditionalMedicareEmployee { get; set; }
 
         // Employer-side payroll
-        public double SocialSecurityEmployer { get; init; }
-        public double MedicareEmployer { get; init; }
-        public double FederalUnemploymentTaxes { get; init; }
-        public double StateUnemploymentTaxes { get; init; }
+        public double SocialSecurityEmployer { get; set; }
+        public double MedicareEmployer { get; set; }
+        public double FederalUnemploymentTaxes { get; set; }
+        public double StateUnemploymentTaxes { get; set; }
 
         public double EmployeePayrollTotal =>
         SocialSecurityEmployee + MedicareEmployee + AdditionalMedicareEmployee;
@@ -38,12 +41,12 @@ namespace MatricesOneOperationThousandsOfChangesExample.Data
         /// <summary>
         /// The total federal withholding amount to be paid.
         /// </summary>
-        public double FederalTax { get; init; }
+        public double FederalTax { get; set; }
 
         /// <summary>
         /// The total state withholding amount to be paid.
         /// </summary>
-        public double StateTax { get; init; }
+        public double StateTax { get; set; }
 
         /// <summary>
         /// A quick calculation for the toal amount of income tax paid.

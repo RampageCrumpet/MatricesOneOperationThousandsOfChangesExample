@@ -12,7 +12,7 @@ namespace MatricesOneOperationThousandsOfChangesExample.Data
     /// </summary>
     public class Employee
     {
-        public Employee(int id, string name, State state, int income)
+        public Employee(int id, string name, State state, double income)
         {
             Id = id;
             Name = name;
@@ -38,6 +38,7 @@ namespace MatricesOneOperationThousandsOfChangesExample.Data
         /// <summary>
         /// The employees pretax income.
         /// </summary>
-        public int Income { get; set; }
+        [MatrixFeature]
+        public double Income { get; set; }
     }
 }
