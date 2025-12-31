@@ -10,31 +10,86 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
     public static class MatrixExecutionEngine
     {
         /// <summary>
-        /// Limits the number of policy columns multiplied per block to cap working-set size.\
-        /// If you choose to play with this value it should be set to some power of two for best performance.
+        /// Limits the number of policy columns multiplied per block to cap working-set size.
+        /// If you choose to play with this value it should be set to some power of two for best performance. 
+        /// We're not doing anything magic here, just chopping the matrix up into smaller pieces since we're working with such ludicrously large matrices.
         /// </summary>
-        private const int MaxPolicyBlockWidth = 64;
+        public const int MaxPolicyBlockWidth = 64;
 
         /// <summary>
         /// Applies all policies by multiplying the employee feature matrix by the plan’s transform matrix in blocks and extracting outputs.
+        /// Also computes general ledger postings using matrix multiplication (outer product) into a column-major output buffer.
         /// </summary>
-        /// <param name="employeeFeatureMatrix">Employee-by-feature matrix where rows are employees and columns are shared features.</param>
-        /// <param name="plan">Precomputed plan containing policy layout and the full transform matrix.</param>
-        /// <param name="inputs">Precomputed employee inputs including per-state employee index groupings.</param>
-        /// <param name="federalTaxes">Output buffer receiving federal tax per employee.</param>
-        /// <param name="stateTaxes">Output buffer receiving state tax per employee (only for that employee’s state).</param>
-        /// <param name="payrollTaxesByPolicy">Output buffers receiving payroll taxes per payroll policy, each sized to employee count.</param>
+        /// <param name="employeeFeatureMatrix">
+        /// Employee-by-feature matrix where rows are employees and columns are shared features.
+        /// </param>
+        /// <param name="plan">
+        /// Precomputed plan containing policy layout and the full transform matrix.
+        /// </param>
+        /// <param name="indicesByState">
+        /// Precomputed employee index groupings by state used to extract state outputs without branching per employee.
+        /// </param>
+        /// <param name="federalTaxes">
+        /// Output buffer receiving federal tax per employee.
+        /// </param>
+        /// <param name="stateTaxes">
+        /// Output buffer receiving state tax per employee (only for that employee’s state).
+        /// </param>
+        /// <param name="payrollTaxesByPolicy">
+        /// Output buffers receiving payroll taxes per payroll policy, each sized to employee count.
+        /// </param>
+        /// <param name="incomeColumnMatrix">
+        /// A [employeeCount x 1] matrix containing employee incomes, used for the general ledger outer product.
+        /// </param>
+        /// <param name="generalLedgerRateBlocks">
+        /// Precomputed [1 x MaxPolicyBlockWidth] rate blocks (zero padded in unused columns) used to compute general ledger postings.
+        /// </param>
+        /// <param name="generalLedgerBucketCount">
+        /// Total number of general ledger posting buckets.
+        /// </param>
+        /// <param name="generalLedgerPostingsColumnMajor">
+        /// Output buffer receiving general ledger postings in column-major layout:
+        /// offset = (bucketIndex * employeeCount) + employeeIndex.
+        /// </param>
+        /// <exception cref="ArgumentNullException">
+        /// Thrown when any required input or output buffer is null.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// Thrown when any provided buffer is incorrectly sized.
+        /// </exception>
         public static void Execute(
             DenseMatrix employeeFeatureMatrix,
             MatrixPolicyPlan plan,
             Dictionary<TaxData.State, int[]> indicesByState,
             double[] federalTaxes,
             double[] stateTaxes,
-            double[][] payrollTaxesByPolicy)
+            double[][] payrollTaxesByPolicy,
+            DenseMatrix incomeColumnMatrix,
+            DenseMatrix[] generalLedgerRateBlocks,
+            int generalLedgerBucketCount,
+            double[] generalLedgerPostingsColumnMajor)
         {
+            if (employeeFeatureMatrix == null) throw new ArgumentNullException(nameof(employeeFeatureMatrix));
+            if (plan == null) throw new ArgumentNullException(nameof(plan));
+            if (indicesByState == null) throw new ArgumentNullException(nameof(indicesByState));
+            if (federalTaxes == null) throw new ArgumentNullException(nameof(federalTaxes));
+            if (stateTaxes == null) throw new ArgumentNullException(nameof(stateTaxes));
+            if (payrollTaxesByPolicy == null) throw new ArgumentNullException(nameof(payrollTaxesByPolicy));
+            if (incomeColumnMatrix == null) throw new ArgumentNullException(nameof(incomeColumnMatrix));
+            if (generalLedgerRateBlocks == null) throw new ArgumentNullException(nameof(generalLedgerRateBlocks));
+            if (generalLedgerPostingsColumnMajor == null) throw new ArgumentNullException(nameof(generalLedgerPostingsColumnMajor));
+
             int employeeCount = employeeFeatureMatrix.RowCount;
             int featureCount = employeeFeatureMatrix.ColumnCount;
             int policyCount = plan.PolicyTransformMatrix.ColumnCount;
+
+            if (federalTaxes.Length < employeeCount)
+                throw new ArgumentException("Federal taxes output is smaller than employee count.", nameof(federalTaxes));
+
+            if (stateTaxes.Length < employeeCount)
+                throw new ArgumentException("State taxes output is smaller than employee count.", nameof(stateTaxes));
+
+            // Note: payrollTaxesByPolicy buffers are assumed to be sized correctly (existing behavior).
 
             int policyBlockWidth = Math.Min(MaxPolicyBlockWidth, policyCount);
 
@@ -69,6 +124,60 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
                     taxesBlockValues,
                     plan.Layout,
                     payrollTaxesByPolicy);
+            }
+
+            // General ledger postings (outer product):
+            // postings[employee, bucket] = income[employee] * rate[bucket]
+            //
+            // Computed here (in execution) so the packer remains a pure copy step.
+            if (generalLedgerBucketCount > 0)
+            {
+                if (incomeColumnMatrix.RowCount != employeeCount || incomeColumnMatrix.ColumnCount != 1)
+                    throw new ArgumentException("Income column matrix must be sized [employeeCount x 1].", nameof(incomeColumnMatrix));
+
+                int requiredPostingLength = employeeCount * generalLedgerBucketCount;
+                if (generalLedgerPostingsColumnMajor.Length < requiredPostingLength)
+                    throw new ArgumentException("General ledger postings buffer is smaller than employeeCount * bucketCount.", nameof(generalLedgerPostingsColumnMajor));
+
+                // Reusable output for one GL rate block: [employeeCount x MaxPolicyBlockWidth]
+                DenseMatrix glPostingsBlock = DenseMatrix.Create(employeeCount, MaxPolicyBlockWidth, 0.0);
+                double[] glBlockValues = glPostingsBlock.Values; // column-major
+
+                int remaining = generalLedgerBucketCount;
+                int bucketStart = 0;
+                int rateBlockIndex = 0;
+
+                while (remaining > 0)
+                {
+                    if ((uint)rateBlockIndex >= (uint)generalLedgerRateBlocks.Length)
+                        throw new ArgumentException("General ledger rate blocks do not cover the configured bucket count.", nameof(generalLedgerRateBlocks));
+
+                    DenseMatrix rateBlock = generalLedgerRateBlocks[rateBlockIndex];
+
+                    if (rateBlock.RowCount != 1 || rateBlock.ColumnCount != MaxPolicyBlockWidth)
+                        throw new ArgumentException($"General ledger rate blocks must be sized [1 x {MaxPolicyBlockWidth}].", nameof(generalLedgerRateBlocks));
+
+                    // Compute: [N x 1] * [1 x W] => [N x W]
+                    incomeColumnMatrix.Multiply(rateBlock, glPostingsBlock);
+
+                    int columnsThisBlock = Math.Min(MaxPolicyBlockWidth, remaining);
+
+                    // Copy each computed column into the contiguous column-major postings buffer.
+                    // glBlockValues is column-major: columnOffset = localColumn * employeeCount
+                    for (int localColumn = 0; localColumn < columnsThisBlock; localColumn++)
+                    {
+                        int bucketIndex = bucketStart + localColumn;
+
+                        int sourceOffset = localColumn * employeeCount;
+                        int destinationOffset = bucketIndex * employeeCount;
+
+                        Array.Copy(glBlockValues, sourceOffset, generalLedgerPostingsColumnMajor, destinationOffset, employeeCount);
+                    }
+
+                    bucketStart += columnsThisBlock;
+                    remaining -= columnsThisBlock;
+                    rateBlockIndex++;
+                }
             }
         }
 

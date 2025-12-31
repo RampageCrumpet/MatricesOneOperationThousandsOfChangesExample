@@ -13,9 +13,6 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
         /// <param name="employees">
         /// The ordered list of employees corresponding to each row in the computed tax buffers.
         /// </param>
-        /// <param name="income">
-        /// A per-employee income buffer used to compute general ledger posting amounts.
-        /// </param>
         /// <param name="federalTaxes">
         /// A per-employee array containing computed federal income tax values.
         /// </param>
@@ -31,6 +28,11 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
         /// <param name="generalLedgerPostingPolicies">
         /// The ordered set of general ledger posting policies defining the posting buckets to populate.
         /// </param>
+        /// <param name="generalLedgerPostingsColumnMajor">
+        /// A precomputed general ledger postings buffer, stored in column-major layout:
+        /// offset = (bucketIndex * employeeCount) + employeeIndex.
+        /// This method only copies from this buffer; it does not compute posting values.
+        /// </param>
         /// <param name="results">
         /// Prewarmed TaxResult objects that are mutated in-place to receive all packed tax and general ledger values.
         /// </param>
@@ -45,26 +47,23 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
         /// </exception>
         public static void Pack(
             IReadOnlyList<Employee> employees,
-            double[] income,
             double[] federalTaxes,
             double[] stateTaxes,
             double[][] payrollTaxesByPolicy,
             MatrixPolicyPlan.PayrollPolicyIndices payrollPolicyIndices,
             IReadOnlyList<TaxData.GeneralLedgerPostingPolicy> generalLedgerPostingPolicies,
+            double[] generalLedgerPostingsColumnMajor,
             TaxResult[] results)
         {
             if (employees == null) throw new ArgumentNullException(nameof(employees));
-            if (income == null) throw new ArgumentNullException(nameof(income));
             if (federalTaxes == null) throw new ArgumentNullException(nameof(federalTaxes));
             if (stateTaxes == null) throw new ArgumentNullException(nameof(stateTaxes));
             if (payrollTaxesByPolicy == null) throw new ArgumentNullException(nameof(payrollTaxesByPolicy));
             if (generalLedgerPostingPolicies == null) throw new ArgumentNullException(nameof(generalLedgerPostingPolicies));
+            if (generalLedgerPostingsColumnMajor == null) throw new ArgumentNullException(nameof(generalLedgerPostingsColumnMajor));
             if (results == null) throw new ArgumentNullException(nameof(results));
 
             int employeeCount = employees.Count;
-
-            if (income.Length < employeeCount)
-                throw new ArgumentException("Income buffer is smaller than employee count.", nameof(income));
 
             if (federalTaxes.Length < employeeCount)
                 throw new ArgumentException("Federal taxes array is smaller than employee count.", nameof(federalTaxes));
@@ -85,45 +84,46 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
             double[] federalUnemploymentEmployerTaxes = payrollTaxesByPolicy[payrollPolicyIndices.FutaEmployerPolicyIndex];
             double[] stateUnemploymentEmployerTaxes = payrollTaxesByPolicy[payrollPolicyIndices.SutaEmployerPolicyIndex];
 
-            int bucketCount = generalLedgerPostingPolicies.Count;
+            if (generalLedgerPostingPolicies.Count > 0)
+            {
+                // generalLedgerPostingsColumnMajor is column-major [employeeCount x bucketCount]:
+                // offset = bucketIndex * employeeCount + employeeIndex.
+                int requiredLength = employeeCount * generalLedgerPostingPolicies.Count;
+                if (generalLedgerPostingsColumnMajor.Length < requiredLength)
+                    throw new ArgumentException("General ledger postings buffer is smaller than employeeCount * bucketCount.", nameof(generalLedgerPostingsColumnMajor));
+            }
 
             for (int employeeIndex = 0; employeeIndex < employeeCount; employeeIndex++)
             {
-                // employee: Current employee to associate with this result row.
                 Employee employee = employees[employeeIndex];
 
                 TaxResult result = results[employeeIndex]
                     ?? throw new InvalidOperationException("Prewarmed TaxResult entry is null.");
 
-                // Keep the employee association consistent with harness expectations.
-                // (PrewarmResults already sets Employee; this is safe even if redundant.)
                 result.Employee = employee;
-
                 result.FederalTax = federalTaxes[employeeIndex];
                 result.StateTax = stateTaxes[employeeIndex];
-
                 result.SocialSecurityEmployee = socialSecurityEmployeeTaxes[employeeIndex];
                 result.MedicareEmployee = medicareEmployeeTaxes[employeeIndex];
                 result.AdditionalMedicareEmployee = additionalMedicareEmployeeTaxes[employeeIndex];
-
                 result.SocialSecurityEmployer = socialSecurityEmployerTaxes[employeeIndex];
                 result.MedicareEmployer = medicareEmployerTaxes[employeeIndex];
                 result.FederalUnemploymentTaxes = federalUnemploymentEmployerTaxes[employeeIndex];
                 result.StateUnemploymentTaxes = stateUnemploymentEmployerTaxes[employeeIndex];
 
                 // General ledger postings: one entry per policy bucket, prewarmed (no allocation here).
-                if (bucketCount > 0)
+                if (generalLedgerPostingPolicies.Count > 0)
                 {
                     double[] postings = result.GeneralLedgerPostings
                         ?? throw new InvalidOperationException("TaxResult.GeneralLedgerPostings was not prewarmed.");
 
-                    if (postings.Length != bucketCount)
+                    if (postings.Length != generalLedgerPostingPolicies.Count)
                         throw new InvalidOperationException("TaxResult.GeneralLedgerPostings length does not match policy bucket count.");
 
-                    double employeeIncome = income[employeeIndex];
-
-                    for (int bucketIndex = 0; bucketIndex < bucketCount; bucketIndex++)
-                        postings[bucketIndex] = employeeIncome * generalLedgerPostingPolicies[bucketIndex].Rate;
+                    // Copy precomputed postings values into the per-employee bucket array.
+                    // generalLedgerPostingsColumnMajor: offset = bucketIndex * employeeCount + employeeIndex
+                    for (int bucketIndex = 0; bucketIndex < generalLedgerPostingPolicies.Count; bucketIndex++)
+                        postings[bucketIndex] = generalLedgerPostingsColumnMajor[(bucketIndex * employeeCount) + employeeIndex];
                 }
             }
         }

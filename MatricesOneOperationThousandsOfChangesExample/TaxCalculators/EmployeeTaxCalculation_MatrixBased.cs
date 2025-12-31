@@ -12,49 +12,113 @@ namespace MatricesOneOperationThousandsOfChangesExample
         /// <summary>
         /// Caches the plan so repeated benchmark runs do not pay plan-build cost each time.
         /// </summary>
-        private static readonly MatrixPolicyPlan matrixPolicyPlan = MatrixPolicyPlan.Build();
+        private static  MatrixPolicyPlan matrixPolicyPlan = MatrixPolicyPlan.Build();
 
-        private readonly double[] incomes;
-        private readonly DenseMatrix employeeFeatureMatrix;
+        private double[] incomes;
+        private DenseMatrix employeeFeatureMatrix;
 
-        private readonly Dictionary<TaxData.State, int[]> indicesByState;
+        private Dictionary<TaxData.State, int[]> indicesByState;
 
-        private readonly double[] federalTaxes;
-        private readonly double[] stateTaxes;
-        private readonly double[][] payrollTaxesByPolicy;
+        private double[] federalTaxes;
+        private double[] stateTaxes;
+        private double[][] payrollTaxesByPolicy;
+
+        /// <summary>
+        /// Number of General Ledger posting "buckets" (a.k.a. posting policies).
+        /// </summary>
+        private int generalLedgerBucketCount;
+
+        /// <summary>
+        /// Rates for each GL bucket (length = generalLedgerBucketCount).
+        /// Pulled once from TaxData.GeneralLedgerPostingPolicies.
+        /// </summary>
+        private double[] generalLedgerRates;
+
+        /// <summary>
+        /// Column-major GL postings buffer sized to [employeeCount x bucketCount].
+        /// </summary>
+        private double[] generalLedgerPostingsColumnMajor;
+
+        /// <summary>
+        /// Income column matrix [employeeCount x 1] used by the execution engine to compute general ledger postings.
+        /// </summary>
+        private DenseMatrix incomeColumnMatrix;
+
+        /// <summary>
+        /// Precomputed [1 x blockWidth] GL rate blocks (padded with zeros) used by the execution engine.
+        /// </summary>
+        private DenseMatrix[] generalLedgerRateBlocks;
 
         public EmployeeTaxCalculation_MatrixBased(IReadOnlyList<Employee> employees)
         {
+            SetupArrays(employees);
+        }
+
+        /// <summary>
+        /// Sets up all input and output arrays used during the matrix-based tax calculation.
+        /// This is only nescessary to avoid computing these arrays during timed runs.
+        /// </summary>
+        /// <param name="employees"> The list of <see cref="Employee"/>'s we want to set up the arrays to hold.</param>
+        private void SetupArrays(IReadOnlyList<Employee> employees)
+        {
+            indicesByState = Enum.GetValues<TaxData.State>().ToDictionary(
+                state => state,
+                state => employees
+                    .Select((employee, index) => (employee, index))
+                    .Where(x => x.employee.State == state)
+                    .Select(x => x.index)
+                    .ToArray());
+
             incomes = new double[employees.Count];
-            var temp = new Dictionary<TaxData.State, List<int>>();
-
             for (int i = 0; i < employees.Count; i++)
-            {
-                Employee employee = employees[i];
+                incomes[i] = employees[i].Income;
 
-                double income = employee.Income;
-                incomes[i] = income;
-
-                TaxData.State state = employee.State;
-                if (!temp.TryGetValue(state, out List<int>? list))
-                {
-                    list = new List<int>();
-                    temp[state] = list;
-                }
-                list.Add(i);
-            }
-
-            indicesByState = new Dictionary<TaxData.State, int[]>(temp.Count);
-            foreach (var kvp in temp)
-                indicesByState[kvp.Key] = kvp.Value.ToArray();
-
-            // Build full feature matrix once up-front (income + thresholds). Income column is populated here.
             employeeFeatureMatrix = FeatureMatrixBuilder.BuildIncomeFeatureMatrix(incomes, matrixPolicyPlan.SharedThresholds);
+            incomeColumnMatrix = DenseMatrix.OfColumnMajor(employees.Count, 1, incomes);
 
             // Preallocate reusable output buffers to avoid allocation during timed runs.
             federalTaxes = new double[employees.Count];
             stateTaxes = new double[employees.Count];
             payrollTaxesByPolicy = AllocatePayrollPolicyArrays(TaxData.PayrollPolicies.Count, employees.Count);
+
+            // Preallocate buckets to stick the general ledger postings into.
+            generalLedgerBucketCount = TaxData.GeneralLedgerPostingPolicies.Count;
+
+            if (generalLedgerBucketCount > 0)
+            {
+                // Cache GL rates once so we do not read policy objects during timed runs.
+                generalLedgerRates = new double[generalLedgerBucketCount];
+                for (int i = 0; i < generalLedgerBucketCount; i++)
+                    generalLedgerRates[i] = TaxData.GeneralLedgerPostingPolicies[i].Rate;
+
+                // Column-major GL postings buffer sized to [employeeCount x bucketCount].
+                generalLedgerPostingsColumnMajor = new double[employees.Count * generalLedgerBucketCount];
+
+                int blockCount = (generalLedgerBucketCount + MatrixExecutionEngine.MaxPolicyBlockWidth - 1) / MatrixExecutionEngine.MaxPolicyBlockWidth;
+                generalLedgerRateBlocks = new DenseMatrix[blockCount];
+
+                for (int blockIndex = 0; blockIndex < blockCount; blockIndex++)
+                {
+                    DenseMatrix rateBlock = DenseMatrix.Create(1, MatrixExecutionEngine.MaxPolicyBlockWidth, 0.0);
+
+                    int bucketStart = blockIndex * MatrixExecutionEngine.MaxPolicyBlockWidth;
+                    int bucketsThisBlock = Math.Min(MatrixExecutionEngine.MaxPolicyBlockWidth, generalLedgerBucketCount - bucketStart);
+
+                    // For a 1-row column-major DenseMatrix, Values[col] is element (0, col).
+                    double[] values = rateBlock.Values;
+
+                    for (int local = 0; local < bucketsThisBlock; local++)
+                        values[local] = generalLedgerRates[bucketStart + local];
+
+                    generalLedgerRateBlocks[blockIndex] = rateBlock;
+                }
+            }
+            else
+            {
+                generalLedgerRates = Array.Empty<double>();
+                generalLedgerPostingsColumnMajor = Array.Empty<double>();
+                generalLedgerRateBlocks = Array.Empty<DenseMatrix>();
+            }
         }
 
         /// <summary>
@@ -95,19 +159,23 @@ namespace MatricesOneOperationThousandsOfChangesExample
                 indicesByState,
                 federalTaxes,
                 stateTaxes,
-                payrollTaxesByPolicy);
+                payrollTaxesByPolicy,
+                incomeColumnMatrix,
+                generalLedgerRateBlocks,
+                generalLedgerBucketCount,
+                generalLedgerPostingsColumnMajor);
         }
 
         public void PackResultsInto(IReadOnlyList<Employee> employees, TaxResult[] results)
         {
             TaxResultPacker.Pack(
                 employees,
-                incomes,
                 federalTaxes,
                 stateTaxes,
                 payrollTaxesByPolicy,
                 matrixPolicyPlan.PayrollIndices,
                 TaxData.GeneralLedgerPostingPolicies,
+                generalLedgerPostingsColumnMajor,
                 results);
         }
 
