@@ -1,5 +1,4 @@
 ﻿using MatricesOneOperationThousandsOfChangesExample.Data;
-using MathNet.Numerics.LinearAlgebra;
 using MathNet.Numerics.LinearAlgebra.Double;
 
 namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTaxCalculatorHelpers

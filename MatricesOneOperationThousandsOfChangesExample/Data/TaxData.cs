@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace MatricesOneOperationThousandsOfChangesExample.Data
+﻿namespace MatricesOneOperationThousandsOfChangesExample.Data
 {
     /// <summary>
     /// This class holds tax data such as payroll policies and progressive tax tables used for tax calculations.

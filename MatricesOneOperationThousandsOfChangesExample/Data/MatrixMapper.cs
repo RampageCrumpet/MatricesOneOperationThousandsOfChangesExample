@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace MatricesOneOperationThousandsOfChangesExample.Data
+﻿namespace MatricesOneOperationThousandsOfChangesExample.Data
 {
     /// <summary>
     /// Provides fast row-major mapping from typed objects into dense numeric buffers using a pre-built schema.

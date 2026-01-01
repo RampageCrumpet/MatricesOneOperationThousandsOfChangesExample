@@ -1,10 +1,4 @@
-﻿using MathNet.Numerics.RootFinding;
-using MatricesOneOperationThousandsOfChangesExample.Data;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using MatricesOneOperationThousandsOfChangesExample.Data;
 using static MatricesOneOperationThousandsOfChangesExample.Data.TaxData;
 
 namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators

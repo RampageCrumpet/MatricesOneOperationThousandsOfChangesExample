@@ -11,7 +11,7 @@ namespace MatricesOneOperationThousandsOfChangesExample.Data
         /// Used to simulate additional scalable employer burden / costing lines we could add. 
         /// This is used to simulate general ledger type expansions.
         /// </summary>
-        public const int AdditionalEmployerBurdenPolicyCount = 100;
+        public const int AdditionalEmployerBurdenPolicyCount = 0;
 
         /// <summary>
         /// The fraction of employer burden that is expanded into general ledger posting policies.
