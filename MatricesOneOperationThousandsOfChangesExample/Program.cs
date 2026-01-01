@@ -8,6 +8,8 @@ const int sampleSize = 20;
 
 // The number of employees we want to generate to calculate taxes for.
 const int employeeCount = 1_000_000;
+
+
 EmployeeGenerator employeeGenerator = new EmployeeGenerator(1234);
 List<Employee> employees = employeeGenerator.GetEmployees(employeeCount);
 

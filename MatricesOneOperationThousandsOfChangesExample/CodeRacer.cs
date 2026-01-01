@@ -64,7 +64,7 @@ namespace MatricesOneOperationThousandsOfChangesExample
             });
 
             // Pack matrix results from internal buffers into the result objects.
-            // I chose to exclude this from timing to focus on pure calculation time. It didn't feel fair to include it.
+            // I chose to exclude this from timing to focus on pure calculation time. It didn't feel fair to include shuffling data into a whole seperate set of objects just for display.
             // If you want to include it, move this call into the timed region above.
             matrixCalculator.PackResultsInto(employees, matrixResultsArray);
 

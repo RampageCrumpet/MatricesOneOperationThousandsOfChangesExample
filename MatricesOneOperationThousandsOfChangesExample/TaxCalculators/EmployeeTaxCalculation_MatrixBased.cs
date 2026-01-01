@@ -44,10 +44,8 @@ namespace MatricesOneOperationThousandsOfChangesExample
         /// </summary>
         private DenseMatrix incomeColumnMatrix;
 
-        /// <summary>
-        /// Precomputed [1 x blockWidth] GL rate blocks (padded with zeros) used by the execution engine.
-        /// </summary>
-        private DenseMatrix[] generalLedgerRateBlocks;
+        private DenseMatrix? generalLedgerRatesRowMatrix;
+        private DenseMatrix? generalLedgerPostingsMatrix;
 
         public EmployeeTaxCalculation_MatrixBased(IReadOnlyList<Employee> employees)
         {
@@ -74,7 +72,9 @@ namespace MatricesOneOperationThousandsOfChangesExample
                 incomes[i] = employees[i].Income;
 
             employeeFeatureMatrix = FeatureMatrixBuilder.BuildIncomeFeatureMatrix(incomes, matrixPolicyPlan.SharedThresholds);
-            incomeColumnMatrix = DenseMatrix.OfColumnMajor(employees.Count, 1, incomes);
+
+            incomeColumnMatrix = DenseMatrix.Create(employees.Count, 1, 0.0);
+            Array.Copy(incomes, 0, incomeColumnMatrix.Values, 0, employees.Count);
 
             // Preallocate reusable output buffers to avoid allocation during timed runs.
             federalTaxes = new double[employees.Count];
@@ -86,38 +86,28 @@ namespace MatricesOneOperationThousandsOfChangesExample
 
             if (generalLedgerBucketCount > 0)
             {
-                // Cache GL rates once so we do not read policy objects during timed runs.
                 generalLedgerRates = new double[generalLedgerBucketCount];
                 for (int i = 0; i < generalLedgerBucketCount; i++)
                     generalLedgerRates[i] = TaxData.GeneralLedgerPostingPolicies[i].Rate;
 
-                // Column-major GL postings buffer sized to [employeeCount x bucketCount].
-                generalLedgerPostingsColumnMajor = new double[employees.Count * generalLedgerBucketCount];
 
-                int blockCount = (generalLedgerBucketCount + MatrixExecutionEngine.MaxPolicyBlockWidth - 1) / MatrixExecutionEngine.MaxPolicyBlockWidth;
-                generalLedgerRateBlocks = new DenseMatrix[blockCount];
+                // Allocate the matrix once. We'll use its internal column-major storage as our buffer.
+                generalLedgerPostingsMatrix = DenseMatrix.Create(employees.Count, generalLedgerBucketCount, 0.0);
 
-                for (int blockIndex = 0; blockIndex < blockCount; blockIndex++)
-                {
-                    DenseMatrix rateBlock = DenseMatrix.Create(1, MatrixExecutionEngine.MaxPolicyBlockWidth, 0.0);
+                generalLedgerPostingsColumnMajor = generalLedgerPostingsMatrix.Values;
 
-                    int bucketStart = blockIndex * MatrixExecutionEngine.MaxPolicyBlockWidth;
-                    int bucketsThisBlock = Math.Min(MatrixExecutionEngine.MaxPolicyBlockWidth, generalLedgerBucketCount - bucketStart);
-
-                    // For a 1-row column-major DenseMatrix, Values[col] is element (0, col).
-                    double[] values = rateBlock.Values;
-
-                    for (int local = 0; local < bucketsThisBlock; local++)
-                        values[local] = generalLedgerRates[bucketStart + local];
-
-                    generalLedgerRateBlocks[blockIndex] = rateBlock;
-                }
+                // Build a single row matrix [1 x bucketCount] for GL rates
+                generalLedgerRatesRowMatrix = DenseMatrix.Create(1, generalLedgerBucketCount, 0.0);
+                double[] rateValues = generalLedgerRatesRowMatrix.Values;
+                for (int bucket = 0; bucket < generalLedgerBucketCount; bucket++)
+                    rateValues[bucket] = generalLedgerRates[bucket];
             }
             else
             {
                 generalLedgerRates = Array.Empty<double>();
                 generalLedgerPostingsColumnMajor = Array.Empty<double>();
-                generalLedgerRateBlocks = Array.Empty<DenseMatrix>();
+                generalLedgerRatesRowMatrix = null;
+                generalLedgerPostingsMatrix = null;
             }
         }
 
@@ -161,7 +151,8 @@ namespace MatricesOneOperationThousandsOfChangesExample
                 stateTaxes,
                 payrollTaxesByPolicy,
                 incomeColumnMatrix,
-                generalLedgerRateBlocks,
+                generalLedgerRatesRowMatrix,
+                generalLedgerPostingsMatrix,
                 generalLedgerBucketCount,
                 generalLedgerPostingsColumnMajor);
         }

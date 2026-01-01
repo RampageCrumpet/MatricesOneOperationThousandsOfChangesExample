@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using static MatricesOneOperationThousandsOfChangesExample.Data.TaxData;
+﻿using static MatricesOneOperationThousandsOfChangesExample.Data.TaxData;
 
 namespace MatricesOneOperationThousandsOfChangesExample.Data
 {
@@ -16,7 +11,7 @@ namespace MatricesOneOperationThousandsOfChangesExample.Data
         /// Used to simulate additional scalable employer burden / costing lines we could add. 
         /// This is used to simulate general ledger type expansions.
         /// </summary>
-        public const int AdditionalEmployerBurdenPolicyCount = 20;
+        public const int AdditionalEmployerBurdenPolicyCount = 100;
 
         /// <summary>
         /// The fraction of employer burden that is expanded into general ledger posting policies.

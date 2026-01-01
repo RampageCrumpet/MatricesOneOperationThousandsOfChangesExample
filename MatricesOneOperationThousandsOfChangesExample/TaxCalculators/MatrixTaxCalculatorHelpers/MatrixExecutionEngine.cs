@@ -1,6 +1,8 @@
-﻿using MathNet.Numerics.LinearAlgebra.Double;
+﻿using MathNet.Numerics;
 using MathNet.Numerics.LinearAlgebra;
+using MathNet.Numerics.LinearAlgebra.Double;
 using MatricesOneOperationThousandsOfChangesExample.Data;
+using MathNet.Numerics.Providers.LinearAlgebra;
 
 namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTaxCalculatorHelpers
 {
@@ -65,7 +67,8 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
             double[] stateTaxes,
             double[][] payrollTaxesByPolicy,
             DenseMatrix incomeColumnMatrix,
-            DenseMatrix[] generalLedgerRateBlocks,
+            DenseMatrix generalLedgerRatesRowMatrix,
+            DenseMatrix generalLedgerPostingsMatrix,
             int generalLedgerBucketCount,
             double[] generalLedgerPostingsColumnMajor)
         {
@@ -76,7 +79,6 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
             if (stateTaxes == null) throw new ArgumentNullException(nameof(stateTaxes));
             if (payrollTaxesByPolicy == null) throw new ArgumentNullException(nameof(payrollTaxesByPolicy));
             if (incomeColumnMatrix == null) throw new ArgumentNullException(nameof(incomeColumnMatrix));
-            if (generalLedgerRateBlocks == null) throw new ArgumentNullException(nameof(generalLedgerRateBlocks));
             if (generalLedgerPostingsColumnMajor == null) throw new ArgumentNullException(nameof(generalLedgerPostingsColumnMajor));
 
             int employeeCount = employeeFeatureMatrix.RowCount;
@@ -126,58 +128,41 @@ namespace MatricesOneOperationThousandsOfChangesExample.TaxCalculators.MatrixTax
                     payrollTaxesByPolicy);
             }
 
-            // General ledger postings (outer product):
-            // postings[employee, bucket] = income[employee] * rate[bucket]
-            //
-            // Computed here (in execution) so the packer remains a pure copy step.
             if (generalLedgerBucketCount > 0)
             {
+                if (generalLedgerRatesRowMatrix == null)
+                    throw new ArgumentNullException(nameof(generalLedgerRatesRowMatrix));
+                if (generalLedgerPostingsMatrix == null)
+                    throw new ArgumentNullException(nameof(generalLedgerPostingsMatrix));
+
                 if (incomeColumnMatrix.RowCount != employeeCount || incomeColumnMatrix.ColumnCount != 1)
-                    throw new ArgumentException("Income column matrix must be sized [employeeCount x 1].", nameof(incomeColumnMatrix));
+                    throw new ArgumentException(
+                        "Income column matrix must be sized [employeeCount x 1].",
+                        nameof(incomeColumnMatrix));
+
+                if (generalLedgerRatesRowMatrix.RowCount != 1 || generalLedgerRatesRowMatrix.ColumnCount != generalLedgerBucketCount)
+                    throw new ArgumentException(
+                        "Rates row matrix must be sized [1 x bucketCount].",
+                        nameof(generalLedgerRatesRowMatrix));
+
+                if (generalLedgerPostingsMatrix.RowCount != employeeCount || generalLedgerPostingsMatrix.ColumnCount != generalLedgerBucketCount)
+                    throw new ArgumentException(
+                        "Postings matrix must be sized [employeeCount x bucketCount].",
+                        nameof(generalLedgerPostingsMatrix));
 
                 int requiredPostingLength = employeeCount * generalLedgerBucketCount;
                 if (generalLedgerPostingsColumnMajor.Length < requiredPostingLength)
-                    throw new ArgumentException("General ledger postings buffer is smaller than employeeCount * bucketCount.", nameof(generalLedgerPostingsColumnMajor));
+                    throw new ArgumentException(
+                        "General ledger postings buffer must be sized employeeCount * bucketCount.",
+                        nameof(generalLedgerPostingsColumnMajor));
 
-                // Reusable output for one GL rate block: [employeeCount x MaxPolicyBlockWidth]
-                DenseMatrix glPostingsBlock = DenseMatrix.Create(employeeCount, MaxPolicyBlockWidth, 0.0);
-                double[] glBlockValues = glPostingsBlock.Values; // column-major
+                // Ensure overwrite semantics even if MathNet ever uses += internally in some provider path.
+                // (Also avoids stale results if someone later changes dimensions between runs.)
+                generalLedgerPostingsMatrix.Clear();
 
-                int remaining = generalLedgerBucketCount;
-                int bucketStart = 0;
-                int rateBlockIndex = 0;
-
-                while (remaining > 0)
-                {
-                    if ((uint)rateBlockIndex >= (uint)generalLedgerRateBlocks.Length)
-                        throw new ArgumentException("General ledger rate blocks do not cover the configured bucket count.", nameof(generalLedgerRateBlocks));
-
-                    DenseMatrix rateBlock = generalLedgerRateBlocks[rateBlockIndex];
-
-                    if (rateBlock.RowCount != 1 || rateBlock.ColumnCount != MaxPolicyBlockWidth)
-                        throw new ArgumentException($"General ledger rate blocks must be sized [1 x {MaxPolicyBlockWidth}].", nameof(generalLedgerRateBlocks));
-
-                    // Compute: [N x 1] * [1 x W] => [N x W]
-                    incomeColumnMatrix.Multiply(rateBlock, glPostingsBlock);
-
-                    int columnsThisBlock = Math.Min(MaxPolicyBlockWidth, remaining);
-
-                    // Copy each computed column into the contiguous column-major postings buffer.
-                    // glBlockValues is column-major: columnOffset = localColumn * employeeCount
-                    for (int localColumn = 0; localColumn < columnsThisBlock; localColumn++)
-                    {
-                        int bucketIndex = bucketStart + localColumn;
-
-                        int sourceOffset = localColumn * employeeCount;
-                        int destinationOffset = bucketIndex * employeeCount;
-
-                        Array.Copy(glBlockValues, sourceOffset, generalLedgerPostingsColumnMajor, destinationOffset, employeeCount);
-                    }
-
-                    bucketStart += columnsThisBlock;
-                    remaining -= columnsThisBlock;
-                    rateBlockIndex++;
-                }
+                // [employeeCount x 1] * [1 x bucketCount] -> [employeeCount x bucketCount]
+                // Writes directly into generalLedgerPostingsColumnMajor because generalLedgerPostingsMatrix is a view over it.
+                incomeColumnMatrix.Multiply(generalLedgerRatesRowMatrix, generalLedgerPostingsMatrix);
             }
         }
 
